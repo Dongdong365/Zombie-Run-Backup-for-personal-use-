@@ -22,10 +22,20 @@ class Door(
     val teleportRegion: String? = null,
     val hasZombieTeleport: Boolean = false,
     val specialTeleport: Boolean = false,
-    val mode: String = "normal",
+    val mode: DoorMode = DoorMode.NORMAL,
     val useScanData: Boolean = false,
     val blocks: Map<String, String> = emptyMap()
 ) {
+
+    enum class DoorMode {
+        NORMAL, PLAYER, ZOMBIE, START;
+
+        companion object {
+            fun fromString(s: String): DoorMode {
+                return entries.firstOrNull { it.name.equals(s, ignoreCase = true) } ?: NORMAL
+            }
+        }
+    }
 
     var isOpen: Boolean = false
     var openTimestamp: Long = 0

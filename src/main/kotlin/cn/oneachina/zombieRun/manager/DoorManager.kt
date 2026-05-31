@@ -9,6 +9,7 @@ import org.bukkit.Bukkit
 import org.bukkit.GameMode
 import org.bukkit.Location
 import org.bukkit.Material
+import org.bukkit.Sound
 import org.bukkit.entity.Player
 import org.bukkit.scheduler.BukkitRunnable
 import java.time.Duration
@@ -60,7 +61,6 @@ class DoorManager(private val plugin: ZombieRun) {
     fun triggerDoor(doorNumber: Int, player: Player? = null, isTpButton: Boolean = false) {
         val door = getDoorByNumber(doorNumber) ?: return
 
-        // 对于tp按钮触发的门，直接关闭门，跳过模式检查和状态检查
         if (isTpButton) {
             val world = Bukkit.getWorlds().first()
             door.close(world)
@@ -68,13 +68,13 @@ class DoorManager(private val plugin: ZombieRun) {
             return
         }
 
-        if (door.mode.equals("start", ignoreCase = true)) {
+        if (door.mode == Door.DoorMode.START) {
             openDoorImmediately(doorNumber)
             player?.sendMessage(Component.text("§a起始门已开启！"))
             return
         }
 
-        if (door.mode.equals("player", ignoreCase = true) || door.mode.equals("zombie", ignoreCase = true)) {
+        if (door.mode == Door.DoorMode.PLAYER || door.mode == Door.DoorMode.ZOMBIE) {
             player?.sendMessage(Component.text("§c此门不能通过按钮开启！"))
             return
         }
@@ -126,8 +126,8 @@ class DoorManager(private val plugin: ZombieRun) {
                         )
                         Bukkit.getOnlinePlayers().forEach { player ->
                             player.showTitle(title)
+                            player.playSound(player.location, Sound.BLOCK_DISPENSER_FAIL, 0.2f, 2f)
                         }
-                        Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "playsound minecraft:block.dispenser.fail master @a 0 0 0 0.2 2 0.2")
                         lastDisplay = currentDisplay
                     }
                     opentime -= 1.0
@@ -153,7 +153,7 @@ class DoorManager(private val plugin: ZombieRun) {
 
                 if (closetime > 0) {
                     val currentDisplay = if (closetime % 1 == 0.0) closetime.toInt().toDouble() else Math.floor(closetime * 10) / 10
-                    
+
                     val humansBehind = Bukkit.getOnlinePlayers().count { player ->
                         val team = plugin.gameManager.getPlayerTeam(player)
                         if (team != GameManager.Team.HUMAN) return@count false
@@ -168,7 +168,7 @@ class DoorManager(private val plugin: ZombieRun) {
 
                     if (currentDisplay != lastDisplay) {
                         val displayStr = if (currentDisplay % 1 == 0.0) currentDisplay.toInt().toString() else String.format("%.1f", currentDisplay)
-                        
+
                         Bukkit.getOnlinePlayers().forEach { player ->
                             val room = plugin.gameManager.getPlayerRoom(player)
                             val title = if (room < currentDoorNumber) {
@@ -195,7 +195,9 @@ class DoorManager(private val plugin: ZombieRun) {
 
                     when (closetime.toInt()) {
                         5, 3, 2, 1 -> {
-                            Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "playsound minecraft:entity.elder_guardian.curse master @a 0 0 0 0.1 2 0.1")
+                            Bukkit.getOnlinePlayers().forEach { player ->
+                                player.playSound(player.location, Sound.ENTITY_ELDER_GUARDIAN_CURSE, 0.1f, 2f)
+                            }
                         }
                     }
 
@@ -218,10 +220,11 @@ class DoorManager(private val plugin: ZombieRun) {
         Bukkit.getScheduler().runTaskLater(plugin, Runnable { forbidden = false }, 60L)
 
         if (broadcast) {
-            Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "playsound minecraft:entity.generic.explode master @a 0 0 0 0.5 2 0.5")
-            Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "playsound minecraft:block.iron_door.open master @a 0 0 0 1 0.5 1")
-            Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "playsound minecraft:block.wooden_door.open master @a 0 0 0 1 0.5 1")
-            Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "playsound minecraft:block.bell.use master @a 0 0 0 1 0.5 1")
+            val soundLoc = Bukkit.getOnlinePlayers().firstOrNull()?.location ?: world.spawnLocation
+            world.playSound(soundLoc, Sound.ENTITY_GENERIC_EXPLODE, 0.5f, 2f)
+            world.playSound(soundLoc, Sound.BLOCK_IRON_DOOR_OPEN, 1f, 0.5f)
+            world.playSound(soundLoc, Sound.BLOCK_WOODEN_DOOR_OPEN, 1f, 0.5f)
+            world.playSound(soundLoc, Sound.BLOCK_BELL_USE, 1f, 0.5f)
 
             Bukkit.getOnlinePlayers().forEach { player ->
                 player.showTitle(Title.title(
@@ -231,8 +234,8 @@ class DoorManager(private val plugin: ZombieRun) {
             }
         }
 
-        if (currentDoorNumber < 9 && !door.mode.equals("start", ignoreCase = true) &&
-            !door.mode.equals("player", ignoreCase = true) && !door.mode.equals("zombie", ignoreCase = true)) {
+        if (currentDoorNumber < 9 && door.mode != Door.DoorMode.START &&
+            door.mode != Door.DoorMode.PLAYER && door.mode != Door.DoorMode.ZOMBIE) {
             closetime = door.closeTime.toDouble()
             startCloseCountdown(door)
         }
@@ -244,17 +247,16 @@ class DoorManager(private val plugin: ZombieRun) {
 
         doorclose = currentDoorNumber
 
-        Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "playsound minecraft:entity.elder_guardian.curse master @a 0 0 0 1 0.5 1")
-        Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "playsound minecraft:block.anvil.land master @a 0 0 0 1 0.5 1")
-        Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "playsound minecraft:entity.zombie.attack_iron_door master @a 0 0 0 1 1 1")
+        val soundLoc = Bukkit.getOnlinePlayers().firstOrNull()?.location ?: world.spawnLocation
+        world.playSound(soundLoc, Sound.ENTITY_ELDER_GUARDIAN_CURSE, 1f, 0.5f)
+        world.playSound(soundLoc, Sound.BLOCK_ANVIL_LAND, 1f, 0.5f)
+        world.playSound(soundLoc, Sound.ENTITY_ZOMBIE_ATTACK_IRON_DOOR, 1f, 1f)
 
         Bukkit.getOnlinePlayers().forEach { player ->
             val room = plugin.gameManager.getPlayerRoom(player)
             if (room < currentDoorNumber) {
-                // 没进入门的玩家，等待10秒后传送
                 startTransferCountdown(player)
             } else if (room == currentDoorNumber) {
-                // 进了门的玩家，直接传送
                 plugin.respawnManager.teleportPlayerByDoorClose(player, doorclose)
             }
         }
@@ -349,7 +351,7 @@ class DoorManager(private val plugin: ZombieRun) {
 
                 if (endtime > 0) {
                     val currentDisplay = if (endtime % 1 == 0.0) endtime.toInt().toDouble() else Math.floor(endtime * 10) / 10
-                    
+
                     if (currentDisplay != lastDisplay) {
                         val displayStr = if (currentDisplay % 1 == 0.0) currentDisplay.toInt().toString() else String.format("%.1f", currentDisplay)
                         Bukkit.getOnlinePlayers().forEach { player ->
@@ -357,8 +359,8 @@ class DoorManager(private val plugin: ZombieRun) {
                                 Component.text(""),
                                 Component.text("§e游戏将于 §d$displayStr §e秒后结束！")
                             ))
+                            player.playSound(player.location, Sound.BLOCK_DISPENSER_FAIL, 0.2f, 2f)
                         }
-                        Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "playsound minecraft:block.dispenser.fail master @a 0 0 0 0.2 2 0.2")
                         lastDisplay = currentDisplay
                     }
                     endtime -= 0.1
@@ -427,20 +429,13 @@ class DoorManager(private val plugin: ZombieRun) {
     }
 
     fun onPlayerEnterDoor(player: Player, doorNumber: Int) {
-        // 玩家进入门区域的逻辑
         val door = getDoorByNumber(doorNumber)
         if (door != null) {
-            // 可以在这里添加进入门区域的事件处理，例如播放音效、显示消息等
             player.sendMessage("你进入了 ${doorNumber} 号门区域")
         }
     }
 
     fun onPlayerLeaveDoor(player: Player, doorNumber: Int) {
-        // 玩家离开门区域的逻辑
         val door = getDoorByNumber(doorNumber)
-        if (door != null) {
-            // 可以在这里添加离开门区域的事件处理，例如播放音效等
-            // 移除离开门区域的消息提示
-        }
     }
 }

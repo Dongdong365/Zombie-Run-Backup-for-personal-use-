@@ -52,6 +52,10 @@ class ConfigManager(private val plugin: ZombieRun) {
         return config.getString("game.mode", "zombie_run") ?: "zombie_run"
     }
 
+    fun getWorldName(): String {
+        return config.getString("game.world", "world") ?: "world"
+    }
+
     fun getStartDelay(): Int {
         return config.getInt("game.start-delay", 30)
     }
@@ -113,7 +117,7 @@ class ConfigManager(private val plugin: ZombieRun) {
             val y2 = doorSection.getInt("y2")
             val z2 = doorSection.getInt("z2")
 
-            val mode = doorSection.getString("mode", "normal") ?: "normal"
+            val modeStr = doorSection.getString("mode", "normal") ?: "normal"
             val delay = doorSection.getInt("delay", 30)
             val material = doorSection.getString("material", "STONE") ?: "STONE"
             val useScanData = doorSection.getBoolean("use-scan-data", false)
@@ -147,7 +151,7 @@ class ConfigManager(private val plugin: ZombieRun) {
                 teleportRegion = doorSection.getString("teleport-region"),
                 hasZombieTeleport = doorSection.getBoolean("has-zombie-teleport", false),
                 specialTeleport = doorSection.getBoolean("special-teleport", false),
-                mode = mode,
+                mode = Door.DoorMode.fromString(modeStr),
                 useScanData = useScanData,
                 blocks = blocks
             )
@@ -324,7 +328,7 @@ class ConfigManager(private val plugin: ZombieRun) {
         doorSection.set("teleport-region", door.teleportRegion)
         doorSection.set("has-zombie-teleport", door.hasZombieTeleport)
         doorSection.set("special-teleport", door.specialTeleport)
-        doorSection.set("mode", door.mode)
+        doorSection.set("mode", door.mode.name.lowercase())
         doorSection.set("use-scan-data", door.useScanData)
         if (door.blocks.isNotEmpty()) {
             val blocksSection = doorSection.createSection("blocks")
