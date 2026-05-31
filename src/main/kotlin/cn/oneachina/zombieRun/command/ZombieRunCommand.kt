@@ -32,8 +32,8 @@ class ZombieRunCommand(private val plugin: ZombieRun) : CommandExecutor, TabComp
                     "doors" -> handleDoors(sender, args.drop(1).toTypedArray())
                     "buttons" -> handleButtons(sender, args.drop(1).toTypedArray())
                     "reload" -> handleReload(sender)
-                    "open" -> handleOpen(sender)
-                    "close" -> handleClose(sender)
+                    "open" -> handleOpen()
+                    "close" -> handleClose()
                 }
             }
             "select", "unselect", "randomgun", "lobby", "transfer" -> {
@@ -77,8 +77,8 @@ class ZombieRunCommand(private val plugin: ZombieRun) : CommandExecutor, TabComp
         sender.sendMessage("§a/zr buttons remove <名称> - 删除按钮")
         sender.sendMessage("§a/zr buttons list - 列出按钮")
         sender.sendMessage("§a/zr reload - 重载配置")
-        sender.sendMessage("§a/zr open - 开始游戏")
-        sender.sendMessage("§a/zr close - 结束游戏")
+        sender.sendMessage("§a/zr open - 开始游戏（管理员/控制台）")
+        sender.sendMessage("§a/zr close - 结束游戏（管理员/控制台）")
         sender.sendMessage("§a/zr select <编号> - 选择想要购买的枪械")
         sender.sendMessage("§a/zr unselect - 取消选择")
         sender.sendMessage("§a/zr randomgun - 随机获得枪械（仅人类）")
@@ -257,7 +257,7 @@ class ZombieRunCommand(private val plugin: ZombieRun) : CommandExecutor, TabComp
                 doorNumber = doorNumber,
                 delay = delay,
                 material = material,
-                mode = mode,
+                mode = Door.DoorMode.fromString(mode),
                 useScanData = useScanData,
                 blocks = blocks
             )
@@ -302,25 +302,15 @@ class ZombieRunCommand(private val plugin: ZombieRun) : CommandExecutor, TabComp
         sender.sendMessage("§a配置重载成功！")
     }
 
-    private fun handleOpen(sender: CommandSender) {
-        if (sender !is org.bukkit.command.ConsoleCommandSender) {
-            sender.sendMessage("§c此命令仅限控制台使用！")
-            return
-        }
-
+    private fun handleOpen() {
         if (plugin.gameManager.getGameStatus() != GameManager.GameStatus.RUNNING) {
             plugin.gameManager.beginGame()
         } else {
-            sender.sendMessage("§c游戏已在运行中！")
+            plugin.logger.warning("游戏已在运行中！")
         }
     }
 
-    private fun handleClose(sender: CommandSender) {
-        if (sender !is Player && sender.hasPermission("zombie.run.admin")) {
-            sender.sendMessage("§c此命令仅限admin使用！")
-            return
-        }
-
+    private fun handleClose() {
         plugin.gameManager.endGame(GameManager.Team.SPECTATOR)
     }
 
@@ -443,7 +433,6 @@ class ZombieRunCommand(private val plugin: ZombieRun) : CommandExecutor, TabComp
                         return
                     }
                     
-                    // 处理操控门号参数，最多5个
                     val doorNumbers = mutableListOf<Int>()
                     for (i in 11 until minOf(args.size, 16)) {
                         val doorNumber = args[i].toIntOrNull()
@@ -594,14 +583,14 @@ class ZombieRunCommand(private val plugin: ZombieRun) : CommandExecutor, TabComp
         return when (args[1].lowercase()) {
             "add" -> {
                 when (args.size) {
-                    3 -> mutableListOf() // 名称，无补全
+                    3 -> mutableListOf()
                     4 -> {
                         Respawn.RespawnType.entries.map { it.name.lowercase() }
                             .filter { it.startsWith(args[3].lowercase()) }
                             .toMutableList()
                     }
-                    5 -> mutableListOf("~") // 门号
-                    6 -> mutableListOf("~") // 房间号
+                    5 -> mutableListOf("~")
+                    6 -> mutableListOf("~")
                     else -> mutableListOf()
                 }
             }
@@ -622,23 +611,23 @@ class ZombieRunCommand(private val plugin: ZombieRun) : CommandExecutor, TabComp
         return when (args[1].lowercase()) {
             "add" -> {
                 when (args.size) {
-                    in 3..8 -> mutableListOf("~") // x1,y1,z1,x2,y2,z2,mode(第8个参数)
-                    9 -> { // mode (第8个参数，索引7)
+                    in 3..8 -> mutableListOf("~")
+                    9 -> {
                         listOf("normal", "player", "zombie", "start")
                             .filter { it.startsWith(args[7].lowercase()) }
                             .toMutableList()
                     }
-                    10 -> { // doorNumber
+                    10 -> {
                         (0..9).map { it.toString() }
                             .filter { it.startsWith(args[8]) }
                             .toMutableList()
                     }
-                    11 -> { // delay
+                    11 -> {
                         listOf("30", "60", "90", "120")
                             .filter { it.startsWith(args[9]) }
                             .toMutableList()
                     }
-                    12 -> { // material
+                    12 -> {
                         listOf("STONE", "IRON_BLOCK", "OBSERVER", "auto")
                             .filter { it.startsWith(args[10].uppercase()) }
                             .toMutableList()
@@ -663,18 +652,18 @@ class ZombieRunCommand(private val plugin: ZombieRun) : CommandExecutor, TabComp
         return when (args[1].lowercase()) {
             "add" -> {
                 when (args.size) {
-                    3, 4 -> mutableListOf("~") // x,y,z
-                    5 -> { // mode
+                    3, 4 -> mutableListOf("~")
+                    5 -> {
                         listOf("normal", "tp", "escape")
                             .filter { it.startsWith(args[4].lowercase()) }
                             .toMutableList()
                     }
 
-                    6 -> { // 根据 mode 决定提示
+                    6 -> {
                         val mode = args[4].lowercase()
                         when (mode) {
                             "normal" -> listOf("<门号>").filter { it.startsWith(args[5]) }
-                            "tp" -> mutableListOf("~") // playerX
+                            "tp" -> mutableListOf("~")
                             "escape" -> mutableListOf()
                             else -> mutableListOf()
                         }
@@ -683,7 +672,7 @@ class ZombieRunCommand(private val plugin: ZombieRun) : CommandExecutor, TabComp
                     7 -> {
                         val mode = args[4].lowercase()
                         when (mode) {
-                            "tp" -> mutableListOf("~") // playerY
+                            "tp" -> mutableListOf("~")
                             else -> mutableListOf()
                         }
                     }
@@ -691,7 +680,7 @@ class ZombieRunCommand(private val plugin: ZombieRun) : CommandExecutor, TabComp
                     8 -> {
                         val mode = args[4].lowercase()
                         when (mode) {
-                            "tp" -> mutableListOf("~") // playerZ
+                            "tp" -> mutableListOf("~")
                             else -> mutableListOf()
                         }
                     }
@@ -699,7 +688,7 @@ class ZombieRunCommand(private val plugin: ZombieRun) : CommandExecutor, TabComp
                     9 -> {
                         val mode = args[4].lowercase()
                         when (mode) {
-                            "tp" -> mutableListOf("~") // zombieX
+                            "tp" -> mutableListOf("~")
                             else -> mutableListOf()
                         }
                     }
@@ -707,7 +696,7 @@ class ZombieRunCommand(private val plugin: ZombieRun) : CommandExecutor, TabComp
                     10 -> {
                         val mode = args[4].lowercase()
                         when (mode) {
-                            "tp" -> mutableListOf("~") // zombieY
+                            "tp" -> mutableListOf("~")
                             else -> mutableListOf()
                         }
                     }
@@ -715,7 +704,7 @@ class ZombieRunCommand(private val plugin: ZombieRun) : CommandExecutor, TabComp
                     11 -> {
                         val mode = args[4].lowercase()
                         when (mode) {
-                            "tp" -> mutableListOf("~") // zombieZ
+                            "tp" -> mutableListOf("~")
                             else -> mutableListOf()
                         }
                     }
