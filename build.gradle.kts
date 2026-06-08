@@ -1,0 +1,52 @@
+plugins {
+    kotlin("jvm") version "2.3.20-Beta2"
+    id("com.gradleup.shadow") version "8.3.0"
+    id("xyz.jpenilla.run-paper") version "2.3.1"
+}
+
+group = "cn.oneachina"
+version = "26.1-snapshot-11"
+
+repositories {
+    mavenCentral()
+    maven("https://repo.papermc.io/repository/maven-public/") {
+        name = "papermc-repo"
+    }
+    maven ("https://repo.extendedclip.com/releases/")
+}
+
+dependencies {
+    compileOnly("io.papermc.paper:paper-api:1.21.11-R0.1-SNAPSHOT")
+    compileOnly("me.clip:placeholderapi:2.12.2")
+    compileOnly("com.cjcrafter:weaponmechanics:4.1.0")
+    implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8")
+    implementation("com.zaxxer:HikariCP:7.0.2")
+}
+
+tasks {
+    runServer {
+        minecraftVersion("1.21.11")
+    }
+}
+
+val targetJavaVersion = 21
+kotlin {
+    jvmToolchain(targetJavaVersion)
+}
+
+tasks.shadowJar {
+    archiveClassifier.set("all")
+}
+
+tasks.build {
+    dependsOn("shadowJar")
+}
+
+tasks.processResources {
+    val props = mapOf("version" to version)
+    inputs.properties(props)
+    filteringCharset = "UTF-8"
+    filesMatching("plugin.yml") {
+        expand(props)
+    }
+}
