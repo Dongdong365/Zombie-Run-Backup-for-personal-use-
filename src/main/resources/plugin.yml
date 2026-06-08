@@ -1,8 +1,8 @@
-name: zombie-run
+name: Zombie_Run_BFPU
 version: '26.1-snapshot-10'
 main: cn.oneachina.zombieRun.ZombieRun
 api-version: '1.21'
-prefix: ZombieRun
+prefix: Zombie_Run_BFPU
 load: STARTUP
 authors: [ oneachina ]
 

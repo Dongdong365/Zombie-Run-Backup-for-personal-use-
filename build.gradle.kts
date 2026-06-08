@@ -36,6 +36,11 @@ kotlin {
 
 tasks.shadowJar {
     archiveClassifier.set("all")
+    archiveBaseName.set("Zombie_Run_BFPU")
+}
+
+tasks.jar {
+    archiveBaseName.set("Zombie_Run_BFPU")
 }
 
 tasks.build {
@@ -48,5 +53,8 @@ tasks.processResources {
     filteringCharset = "UTF-8"
     filesMatching("plugin.yml") {
         expand(props)
+    }
+    from(rootProject.file("LICENSE")) {
+        into("")
     }
 }
