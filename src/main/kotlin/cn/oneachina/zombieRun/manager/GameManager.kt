@@ -2,46 +2,43 @@ package cn.oneachina.zombieRun.manager
 
 import cn.oneachina.zombieRun.ZombieRun
 import cn.oneachina.zombieRun.model.Door
-import cn.oneachina.zombieRun.task.StartCountdownTask
-import cn.oneachina.zombieRun.task.WaitStartCountdownTask
 import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.format.NamedTextColor
-import net.kyori.adventure.text.format.TextDecoration
 import net.kyori.adventure.title.Title
 import org.bukkit.Bukkit
 import org.bukkit.GameMode
 import org.bukkit.Sound
 import org.bukkit.attribute.Attribute
 import org.bukkit.entity.Player
-import java.time.Duration
+import org.bukkit.scheduler.BukkitRunnable
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.CopyOnWriteArrayList
 
 class GameManager(private val plugin: ZombieRun) {
     enum class GameStatus { WAITING, STARTING, RUNNING, ENDED }
     enum class Team { HUMAN, ZOMBIE, ZOMBIE_MAIN, SPECTATOR }
 
-    private var status = GameStatus.WAITING
+    @Volatile private var status = GameStatus.WAITING
     private val playerTeams = ConcurrentHashMap<Player, Team>()
     private val playerRooms = ConcurrentHashMap<Player, Int>()
 
-    private var gameStartTime: Long = 0
     private val humans = CopyOnWriteArrayList<Player>()
     private val zombies = CopyOnWriteArrayList<Player>()
     private val zombieMains = CopyOnWriteArrayList<Player>()
 
-    private var waitStartCountdown: Int = 0
+    @Volatile var alphaZombie: Player? = null
+    @Volatile var isCountdownActive = false
+    @Volatile var countdownTask: org.bukkit.scheduler.BukkitRunnable? = null
 
-    var alphaZombie: Player? = null
-    var isCountdownActive = false
-    var countdownTask: StartCountdownTask? = null
-
-    private var waitStartTask: WaitStartCountdownTask? = null
     private var autoCheckTaskId: Int = -1
     private var maxDurationTaskId: Int = -1
+    private var foodLevelTaskId: Int = -1
+    private var resetSelectionsAfterGame: Boolean = false
+    @Volatile private var gameStartTime: Long = 0
+    @Volatile var waitStartTask: BukkitRunnable? = null
 
     init {
         startAutoCheckTask()
+        startFoodLevelTask()
     }
 
     fun addPlayer(player: Player) {
@@ -74,9 +71,26 @@ class GameManager(private val plugin: ZombieRun) {
             plugin.logger.warning("尝试开始游戏但没有玩家在线")
             return
         }
-        cancelWaitStartTask()
         setGameStatus(GameStatus.STARTING)
-        countdownTask = StartCountdownTask(plugin, this)
+        countdownCount = 10
+        countdownTask = object : org.bukkit.scheduler.BukkitRunnable() {
+            private var count = 10
+            override fun run() {
+                if (count <= 0) {
+                    beginGame()
+                    cancel()
+                    return
+                }
+                Bukkit.getOnlinePlayers().forEach { player ->
+                    player.showTitle(Title.title(
+                        Component.text("$count", NamedTextColor.YELLOW),
+                        Component.text("游戏即将开始...", NamedTextColor.GOLD)
+                    ))
+                }
+                count--
+                countdownCount = count
+            }
+        }
         countdownTask!!.runTaskTimer(plugin, 0L, 20L)
     }
 
@@ -87,19 +101,21 @@ class GameManager(private val plugin: ZombieRun) {
 
     fun beginGame() {
         if (status != GameStatus.STARTING) return
-        setGameStatus(GameStatus.RUNNING)
-        gameStartTime = System.currentTimeMillis()
 
         plugin.doorManager.reset()
 
         val alpha = alphaZombie ?: selectAlphaZombie()
+        alphaZombie = alpha
         setPlayerTeam(alpha, Team.ZOMBIE_MAIN)
         val baseHealth = 20.0
         val alphaHealth = baseHealth * plugin.configManager.getAlphaZombieHealthMultiplier()
         alpha.getAttribute(Attribute.MAX_HEALTH)?.baseValue = alphaHealth
         alpha.health = alphaHealth
 
-        alpha.sendMessage(Component.text("你被选为母体！6秒后容器破裂，届时你可以行动。", NamedTextColor.LIGHT_PURPLE))
+        alpha.sendMessage(Component.text("你被选为母体！10秒后容器破裂，届时你可以行动。", NamedTextColor.LIGHT_PURPLE))
+        plugin.respawnManager.teleportToZombieMainRespawn(alpha)
+        alpha.gameMode = GameMode.ADVENTURE
+        alpha.inventory.clear()
 
         Bukkit.getOnlinePlayers().forEach { player ->
             if (player != alpha) {
@@ -108,8 +124,12 @@ class GameManager(private val plugin: ZombieRun) {
                 player.health = 20.0
                 player.gameMode = GameMode.ADVENTURE
                 plugin.miscManager.giveStarterKit(player)
+                plugin.respawnManager.teleportToPlayerInitialRespawn(player)
             }
         }
+
+        gameStartTime = System.currentTimeMillis()
+        setGameStatus(GameStatus.RUNNING)
 
         plugin.doorManager.getAllDoors()
             .filter { it.mode == Door.DoorMode.PLAYER }
@@ -119,26 +139,27 @@ class GameManager(private val plugin: ZombieRun) {
             plugin.doorManager.getAllDoors()
                 .filter { it.mode == Door.DoorMode.ZOMBIE }
                 .forEach { plugin.doorManager.openDoorImmediatelyByName(it.name, broadcast = false) }
-        }, 100L)
+        }, 200L)
 
         Bukkit.getScheduler().runTaskLater(plugin, Runnable {
             Bukkit.getOnlinePlayers().forEach { player ->
-                player.showTitle(Title.title(Component.text("警告！", NamedTextColor.RED), Component.text("收容装置发生破裂！请尽全力逃出！", NamedTextColor.RED)))
+                player.showTitle(Title.title(
+                    Component.text("警告！", NamedTextColor.RED),
+                    Component.text("收容装置发生破裂！请尽全力逃出！", NamedTextColor.RED)
+                ))
             }
-        }, 100L)
+        }, 200L)
 
         Bukkit.getScheduler().runTaskLater(plugin, Runnable {
             if (alpha.isOnline && getPlayerTeam(alpha) == Team.ZOMBIE_MAIN) {
-                alpha.gameMode = GameMode.ADVENTURE
                 alpha.showTitle(Title.title(
                     Component.text("容器破裂！", NamedTextColor.RED),
-                    Component.text("现在你可以行动了！", NamedTextColor.GOLD),
-                    Title.Times.times(Duration.ofMillis(500), Duration.ofSeconds(2), Duration.ofMillis(500))
+                    Component.text("现在你可以行动了！", NamedTextColor.GOLD)
                 ))
                 alpha.sendMessage(Component.text("容器破裂！现在你可以行动了！", NamedTextColor.RED))
                 plugin.staminaManager.applyZombieEffects(alpha)
             }
-        }, 120L)
+        }, 200L)
 
         plugin.doorManager.getAllDoors()
             .filter { it.mode == Door.DoorMode.START }
@@ -161,7 +182,6 @@ class GameManager(private val plugin: ZombieRun) {
     }
 
     fun setPlayerTeam(player: Player, team: Team) {
-        val oldTeam = playerTeams[player]
         playerTeams[player] = team
         humans.remove(player)
         zombies.remove(player)
@@ -174,7 +194,7 @@ class GameManager(private val plugin: ZombieRun) {
             else -> {}
         }
 
-        if (status == GameStatus.RUNNING && oldTeam == Team.HUMAN && team != Team.HUMAN) {
+        if (status == GameStatus.RUNNING && team != Team.HUMAN) {
             checkGameEnd()
         }
     }
@@ -212,12 +232,34 @@ class GameManager(private val plugin: ZombieRun) {
 
         sendGameEndResult()
 
+        if (resetSelectionsAfterGame) {
+            plugin.gunManager.resetAllSelections()
+        }
+
         Bukkit.getScheduler().runTaskLater(plugin, Runnable {
+            countdownTask?.cancel()
+            countdownTask = null
+            waitStartTask?.cancel()
+            waitStartTask = null
+            isCountdownActive = false
+            countdownCount = 0
+            alphaZombie = null
+
+            playerTeams.clear()
+            playerRooms.clear()
+            humans.clear()
+            zombies.clear()
+            zombieMains.clear()
+
+            plugin.miscManager.clear()
+            plugin.staminaManager.clear()
+
             Bukkit.getOnlinePlayers().forEach { player ->
                 plugin.respawnManager.teleportToWaitRespawn(player)
                 player.gameMode = GameMode.ADVENTURE
                 setPlayerRoom(player, 0)
                 setPlayerTeam(player, Team.SPECTATOR)
+                plugin.gameListener.giveShopItem(player)
             }
             status = GameStatus.WAITING
         }, 80L)
@@ -243,12 +285,10 @@ class GameManager(private val plugin: ZombieRun) {
         val infectSecond = formatEntry(infectList.getOrNull(1))
         val infectThird = formatEntry(infectList.getOrNull(2))
 
-        val line1 = Component.text("==========================================", NamedTextColor.GREEN)
-        Bukkit.broadcast(line1)
-
+        Bukkit.broadcast(Component.text("==========================================", NamedTextColor.GREEN))
         val line2 = Component.text()
             .append(Component.text("                           ", NamedTextColor.YELLOW))
-            .append(Component.text("游戏结算", NamedTextColor.YELLOW, TextDecoration.BOLD))
+            .append(Component.text("游戏结算", NamedTextColor.YELLOW))
             .build()
         Bukkit.broadcast(line2)
 
@@ -329,37 +369,46 @@ class GameManager(private val plugin: ZombieRun) {
         Bukkit.broadcast(line10)
 
         Bukkit.broadcast(Component.empty())
-        Bukkit.broadcast(line1)
+        Bukkit.broadcast(Component.text("==========================================", NamedTextColor.GREEN))
 
         val killRewards = mapOf(0 to 200, 1 to 150, 2 to 100)
         killList.forEachIndexed { index, (player, _) ->
             val reward = killRewards[index] ?: 0
             plugin.miscManager.addCoins(player, reward)
-            player.sendMessage("§6+ $reward 硬币! (击杀第 ${index+1} 名)")
+            player.sendMessage("§6+ $reward 硬币! (击杀第 ${index + 1} 名)")
         }
 
         val infectRewards = mapOf(0 to 200, 1 to 150, 2 to 100)
         infectList.forEachIndexed { index, (player, _) ->
             val reward = infectRewards[index] ?: 0
             plugin.miscManager.addCoins(player, reward)
-            player.sendMessage("§6+ $reward 硬币! (感染第 ${index+1} 名)")
+            player.sendMessage("§6+ $reward 硬币! (感染第 ${index + 1} 名)")
         }
+    }
+
+    fun setResetSelectionsAfterGame(value: Boolean) {
+        resetSelectionsAfterGame = value
     }
 
     fun getPlayerTeam(player: Player?) = playerTeams.getOrDefault(player, Team.SPECTATOR)
     fun getPlayerRoom(player: Player) = playerRooms.getOrDefault(player, 0)
     fun setPlayerRoom(player: Player, room: Int) { playerRooms[player] = room }
-    fun getGameStartTime(): Long = gameStartTime
-    fun getHumans(): List<Player> = humans
-    fun getZombies(): List<Player> = zombies
-    fun getZombieMains(): List<Player> = zombieMains
+    fun getHumans(): List<Player> = humans.toList()
+    fun getZombies(): List<Player> = zombies.toList()
+    fun getZombieMains(): List<Player> = zombieMains.toList()
     fun getGameStatus() = status
+    fun getGameStartTime() = gameStartTime
+    @Volatile private var countdownCount: Int = 0
+    fun getCountdown(): Int = countdownCount
+    fun cancelWaitStartTask() {
+        waitStartTask?.cancel()
+        waitStartTask = null
+    }
 
     fun clear() {
         playerTeams.clear()
         playerRooms.clear()
         countdownTask?.cancel()
-        cancelWaitStartTask()
         if (autoCheckTaskId != -1) {
             Bukkit.getScheduler().cancelTask(autoCheckTaskId)
             autoCheckTaskId = -1
@@ -368,12 +417,72 @@ class GameManager(private val plugin: ZombieRun) {
             Bukkit.getScheduler().cancelTask(maxDurationTaskId)
             maxDurationTaskId = -1
         }
+        if (foodLevelTaskId != -1) {
+            Bukkit.getScheduler().cancelTask(foodLevelTaskId)
+            foodLevelTaskId = -1
+        }
+    }
+
+    fun forceClearAllData(): Int {
+        countdownTask?.cancel()
+        countdownTask = null
+        waitStartTask?.cancel()
+        waitStartTask = null
+        isCountdownActive = false
+        alphaZombie = null
+        status = GameStatus.WAITING
+        gameStartTime = 0
+        countdownCount = 0
+
+        val clearedPlayerCount = playerTeams.size
+        playerTeams.clear()
+        playerRooms.clear()
+        humans.clear()
+        zombies.clear()
+        zombieMains.clear()
+
+        Bukkit.getOnlinePlayers().forEach { player ->
+            player.getAttribute(org.bukkit.attribute.Attribute.MAX_HEALTH)?.baseValue = 20.0
+            player.health = 20.0
+            player.foodLevel = 20
+            player.saturation = 20.0f
+            player.inventory.clear()
+            player.clearActivePotionEffects()
+            player.gameMode = org.bukkit.GameMode.ADVENTURE
+            player.setAllowFlight(false)
+        }
+
+        plugin.playerDataManager.resetAllSelections()
+        plugin.miscManager.clear()
+        plugin.staminaManager.clear()
+        plugin.doorManager.reset()
+        plugin.buttonManager.resetAllButtons()
+
+        if (autoCheckTaskId == -1) {
+            startAutoCheckTask()
+        }
+        if (foodLevelTaskId == -1) {
+            startFoodLevelTask()
+        }
+
+        plugin.logger.info("强制清空游戏数据完成，清除了 $clearedPlayerCount 名玩家的身份信息")
+        return clearedPlayerCount
     }
 
     private fun startAutoCheckTask() {
         autoCheckTaskId = Bukkit.getScheduler().scheduleSyncRepeatingTask(plugin, {
             checkAutoStartCondition()
         }, 0L, 20L)
+    }
+
+    private fun startFoodLevelTask() {
+        foodLevelTaskId = Bukkit.getScheduler().scheduleSyncRepeatingTask(plugin, {
+            for (player in Bukkit.getOnlinePlayers()) {
+                player.foodLevel = 20
+                player.saturation = 20.0f
+                player.exhaustion = 0.0f
+            }
+        }, 0L, 40L)
     }
 
     private fun checkAutoStartCondition() {
@@ -385,35 +494,55 @@ class GameManager(private val plugin: ZombieRun) {
         when (status) {
             GameStatus.WAITING -> {
                 if (onlineCount >= minPlayers) {
-                    if (waitStartTask == null) {
-                        waitStartCountdown = plugin.configManager.getStartDelay()
-                        waitStartTask = WaitStartCountdownTask(plugin, this, waitStartCountdown)
-                        waitStartTask!!.runTaskTimer(plugin, 0L, 20L)
+                    if (!isCountdownActive) {
+                        isCountdownActive = true
+                        setGameStatus(GameStatus.STARTING)
+                        val startDelay = plugin.configManager.getStartDelay()
+                        countdownCount = startDelay
+                        countdownTask = object : org.bukkit.scheduler.BukkitRunnable() {
+                            private var count = startDelay
+                            override fun run() {
+                                if (count <= 0) {
+                                    beginGame()
+                                    cancel()
+                                    return
+                                }
+                                Bukkit.getOnlinePlayers().forEach { player ->
+                                    player.showTitle(Title.title(
+                                        Component.text("$count", NamedTextColor.YELLOW),
+                                        Component.text("游戏即将开始...", NamedTextColor.GOLD)
+                                    ))
+                                }
+                                count--
+                                countdownCount = count
+                            }
+                        }
+                        countdownTask!!.runTaskTimer(plugin, 0L, 20L)
                     }
-                } else {
-                    cancelWaitStartTask()
                 }
             }
             GameStatus.STARTING -> {
                 if (onlineCount < minPlayers) {
-                    cancelCountdownTask()
+                    countdownTask?.cancel()
+                    countdownTask = null
+                    isCountdownActive = false
                     setGameStatus(GameStatus.WAITING)
                     Bukkit.broadcast(Component.text("§c人数不足，游戏取消"))
                 }
             }
-
             else -> {}
         }
     }
+}
 
-    fun cancelWaitStartTask() {
-        waitStartTask?.cancel()
-        waitStartTask = null
-    }
+class CopyOnWriteArrayList<T> : Iterable<T> {
+    private val list = java.util.concurrent.CopyOnWriteArrayList<T>()
 
-    fun cancelCountdownTask() {
-        countdownTask?.cancel()
-        countdownTask = null
-        isCountdownActive = false
-    }
+    fun add(item: T) = list.add(item)
+    fun remove(item: T) = list.remove(item)
+    fun isEmpty() = list.isEmpty()
+    fun clear() = list.clear()
+    val size: Int get() = list.size
+    operator fun get(index: Int) = list[index]
+    override fun iterator(): Iterator<T> = list.iterator()
 }

@@ -1,0 +1,159 @@
+# 枪械商店配置文件
+# 修改后需要服务器重载 / 重启生效
+
+# 玩家数据相关配置
+player-data:
+  # 新玩家的默认硬币数
+  default-coins: 1000
+  # 是否在每局游戏结束后重置枪械选择 (true/false)
+  reset-selection-after-game: false
+
+# GUI 设置
+gui:
+  # 标题 (支持 & 颜色代码)
+  title: "&6&l枪械商店"
+  # 界面大小 (9-54, 必须是 9 的倍数)
+  size: 54
+  # 边框材质 (第一行、最后一行、第一列、最后一列)
+  border-material: "BLACK_STAINED_GLASS_PANE"
+  # 边框物品显示名 (留空则不显示)
+  border-name: ""
+  # 物品槽填充材质 (null 表示不填充中间区域)
+  filler-material: null
+
+  # 翻页/关闭按钮 (可自定义)
+  buttons:
+    # 上一页按钮
+    previous-page:
+      material: "PLAYER_HEAD"
+      display-name: "&a上一页"
+      lore:
+        - "&7点击返回上一页"
+    # 下一页按钮
+    next-page:
+      material: "PLAYER_HEAD"
+      display-name: "&a下一页"
+      lore:
+        - "&7点击前往下一页"
+    # 关闭按钮
+    close:
+      material: "BARRIER"
+      display-name: "&c关闭"
+      lore:
+        - "&7点击关闭商店"
+    # 重置选择按钮
+    reset-selection:
+      material: "OBSIDIAN"
+      display-name: "&4&l重置选择"
+      lore:
+        - "&7点击清除当前枪械选择"
+        - "&7清除后游戏开始时随机获得"
+    # 硬币信息按钮
+    coin-info:
+      material: "GOLD_NUGGET"
+      display-name: "&6硬币余额"
+      lore:
+        - "&7当前硬币: %coins%"
+    # 页码信息按钮
+    page-info:
+      material: "BOOK"
+      display-name: "&e第 %current% / %total% 页"
+      lore:
+        - "&7本页显示 %shown% 把枪械"
+        - "&7共 %total_guns% 把枪械"
+    # 信息按钮 (可选)
+    info:
+      material: "PAPER"
+      display-name: "&b使用说明"
+      lore:
+        - "&7点击枪械选择 / 取消选择"
+        - "&7游戏开始时自动发放选择的枪械"
+        - "&7未选择则随机获得一把枪械"
+
+# 商店物品 (玩家右键此物品打开商店)
+shop-item:
+  material: "NETHER_STAR"
+  display-name: "&6&l枪械商店"
+  lore:
+    - "&7右键打开枪械商店"
+
+# 枪械列表
+# material: 背包图标使用的材质 (必须是有效的 Bukkit Material)
+# display-name: 游戏内显示名 (支持 & 颜色代码)
+# price: 价格 (硬币)
+# description: 详细描述 (多行)
+# give-commands: 游戏开始时执行的控制台命令
+#   支持占位符: %player% = 玩家名
+# golden: 是否为金枪 (true/false, 预留)
+guns:
+  ak47:
+    material: "DIAMOND_SWORD"
+    display-name: "&6&lAK47 突击步枪"
+    price: 600
+    description:
+      - "&7一把高伤害的突击步枪"
+      - "&7后坐力适中，适合中远距离"
+      - "&a点击选择此枪械"
+    give-commands:
+      - "qm give %player% AK47"
+    golden: false
+
+  m4a1:
+    material: "IRON_SWORD"
+    display-name: "&b&lM4A1 卡宾枪"
+    price: 500
+    description:
+      - "&7精准度高，射速快"
+      - "&7适合各类战斗场景"
+      - "&a点击选择此枪械"
+    give-commands:
+      - "qm give %player% M4A1"
+    golden: false
+
+  awp:
+    material: "GOLDEN_PICKAXE"
+    display-name: "&4&lAWP 狙击步枪"
+    price: 800
+    description:
+      - "&7一枪爆头，高伤害狙击枪"
+      - "&7适合远距离精准打击"
+      - "&a点击选择此枪械"
+    give-commands:
+      - "qm give %player% AWP"
+    golden: false
+
+  desert-eagle:
+    material: "NETHER_BRICK"
+    display-name: "&e&l沙漠之鹰"
+    price: 300
+    description:
+      - "&7高伤害手枪"
+      - "&7射速慢但伤害高"
+      - "&a点击选择此枪械"
+    give-commands:
+      - "qm give %player% DEAGLE"
+    golden: false
+
+  ump45:
+    material: "WOODEN_SWORD"
+    display-name: "&2&lUMP45 冲锋枪"
+    price: 400
+    description:
+      - "&7高射速，近战利器"
+      - "&7适合快速突进"
+      - "&a点击选择此枪械"
+    give-commands:
+      - "qm give %player% UMP45"
+    golden: false
+
+  golden-ak47:
+    material: "GOLDEN_SWORD"
+    display-name: "&6✦ &e&l黄金 AK47 &6✦"
+    price: 2000
+    description:
+      - "&6稀有的黄金枪械"
+      - "&e伤害更高，后坐力更低"
+      - "&a点击选择此枪械"
+    give-commands:
+      - "qm give %player% GOLDEN_AK47"
+    golden: true

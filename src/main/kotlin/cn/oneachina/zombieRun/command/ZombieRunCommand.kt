@@ -4,7 +4,6 @@ import cn.oneachina.zombieRun.ZombieRun
 import cn.oneachina.zombieRun.manager.GameManager
 import cn.oneachina.zombieRun.model.Button
 import cn.oneachina.zombieRun.model.Door
-import cn.oneachina.zombieRun.model.Respawn
 import org.bukkit.Bukkit
 import org.bukkit.command.Command
 import org.bukkit.command.CommandExecutor
@@ -21,7 +20,7 @@ class ZombieRunCommand(private val plugin: ZombieRun) : CommandExecutor, TabComp
         }
 
         when (args[0].lowercase()) {
-            "start", "spawn", "doors", "buttons", "reload", "open", "close" -> {
+            "start", "spawn", "doors", "buttons", "reload", "open", "close", "reset-all" -> {
                 if (!sender.hasPermission("zombie.run.admin")) {
                     sender.sendMessage("§c你没有权限使用此命令！")
                     return true
@@ -34,27 +33,17 @@ class ZombieRunCommand(private val plugin: ZombieRun) : CommandExecutor, TabComp
                     "reload" -> handleReload(sender)
                     "open" -> handleOpen()
                     "close" -> handleClose()
+                    "reset-all" -> handleResetAll(sender)
                 }
             }
-            "select", "unselect", "randomgun", "lobby", "transfer" -> {
-                if (sender !is Player) {
-                    sender.sendMessage("§c此命令只能由玩家执行！")
-                    return true
-                }
+            "shop", "lobby", "transfer", "coins", "reset-select" -> {
                 when (args[0].lowercase()) {
-                    "select" -> handleSelect(sender, args.drop(1).toTypedArray())
-                    "unselect" -> handleUnselect(sender)
-                    "randomgun" -> handleRandomgun(sender)
+                    "shop" -> handleShop(sender)
                     "lobby" -> handleLobby(sender)
                     "transfer" -> handleTransfer(sender, args.drop(1).toTypedArray())
+                    "coins" -> handleCoins(sender, args.drop(1).toTypedArray())
+                    "reset-select" -> handleResetSelect(sender)
                 }
-            }
-            "door" -> {
-                if (sender !is Player) {
-                    sender.sendMessage("§c此命令只能由玩家执行！")
-                    return true
-                }
-                handleDoor(sender, args.drop(1).toTypedArray())
             }
             else -> sendHelp(sender)
         }
@@ -63,26 +52,183 @@ class ZombieRunCommand(private val plugin: ZombieRun) : CommandExecutor, TabComp
 
     private fun sendHelp(sender: CommandSender) {
         sender.sendMessage("§a===== 僵尸快跑命令 =====")
-        sender.sendMessage("§a/zr start - 开始游戏（需要管理员）")
-        sender.sendMessage("§a/zr door <门号> - 触发指定门")
-        sender.sendMessage("§a/zr spawn add <名称> <类型> [门号] [房间号] - 添加重生点")
+        sender.sendMessage("§e玩家命令:")
+        sender.sendMessage("§a/zr shop - 打开枪械商店 (选择你喜欢的枪械)")
+        sender.sendMessage("§a/zr coins - 查看你的硬币余额")
+        sender.sendMessage("§a/zr coins <玩家> - 查看他人硬币余额")
+        sender.sendMessage("§a/zr transfer <玩家> <金额> - 转账硬币给其他玩家")
+        sender.sendMessage("§a/zr reset-select - 清除你的枪械选择")
+        sender.sendMessage("§a/zr lobby - 返回大厅")
+        sender.sendMessage("")
+        sender.sendMessage("§6管理员命令:")
+        sender.sendMessage("§a/zr start - 开始游戏")
+        sender.sendMessage("§a/zr spawn add <名称> <类型> - 添加重生点")
         sender.sendMessage("§a/zr spawn remove <名称> - 删除重生点")
         sender.sendMessage("§a/zr spawn list - 列出重生点")
-        sender.sendMessage("§a/zr doors add <x1> <y1> <z1> <x2> <y2> <z2> [mode] [门号] [delay] [材质] - 添加门")
+        sender.sendMessage("§a/zr doors add ... - 添加门")
         sender.sendMessage("§a/zr doors remove <名称> - 删除门")
-        sender.sendMessage("§a/zr doors list - 列出门")
-        sender.sendMessage("§a/zr buttons add <x> <y> <z> normal <门号> - 添加普通开门按钮")
-        sender.sendMessage("§a/zr buttons add <x> <y> <z> tp <playerX> <playerY> <playerZ> <zombieX> <zombieY> <zombieZ> <门号1> [门号2] [门号3] [门号4] [门号5] - 添加传送按钮（人类和僵尸目标，最多控制5个门）")
-        sender.sendMessage("§a/zr buttons add <x> <y> <z> escape - 添加撤离按钮")
+        sender.sendMessage("§a/zr doors list - 列出所有门")
+        sender.sendMessage("§a/zr buttons add ... - 添加按钮")
         sender.sendMessage("§a/zr buttons remove <名称> - 删除按钮")
-        sender.sendMessage("§a/zr buttons list - 列出按钮")
+        sender.sendMessage("§a/zr buttons list - 列出所有按钮")
         sender.sendMessage("§a/zr reload - 重载配置")
-        sender.sendMessage("§a/zr open - 开始游戏（管理员/控制台）")
-        sender.sendMessage("§a/zr close - 结束游戏（管理员/控制台）")
-        sender.sendMessage("§a/zr select <编号> - 选择想要购买的枪械")
-        sender.sendMessage("§a/zr unselect - 取消选择")
-        sender.sendMessage("§a/zr randomgun - 随机获得枪械（仅人类）")
-        sender.sendMessage("§a/zr lobby - 返回大厅")
+        sender.sendMessage("§a/zr open - 开始游戏")
+        sender.sendMessage("§a/zr close - 结束游戏")
+        sender.sendMessage("§a/zr coins set <玩家> <金额> - 设置玩家硬币")
+        sender.sendMessage("§a/zr coins add <玩家> <金额> - 给玩家添加硬币")
+        sender.sendMessage("§a/zr coins take <玩家> <金额> - 扣除玩家硬币")
+        sender.sendMessage("§a/zr reset-all - 清除所有玩家身份与游戏数据(保留硬币)")
+    }
+
+    private fun handleShop(sender: CommandSender) {
+        if (sender !is Player) {
+            sender.sendMessage("§c此命令只能由玩家执行！")
+            return
+        }
+        plugin.gunShopGUI.openShop(sender)
+    }
+
+    private fun handleLobby(sender: CommandSender) {
+        if (sender !is Player) {
+            sender.sendMessage("§c此命令只能由玩家执行！")
+            return
+        }
+        plugin.miscManager.teleportToLobby(sender)
+    }
+
+    private fun handleTransfer(sender: CommandSender, args: Array<String>) {
+        if (sender !is Player) {
+            sender.sendMessage("§c此命令只能由玩家执行！")
+            return
+        }
+        if (args.size < 2) {
+            sender.sendMessage("§c用法: /zr transfer <玩家> <金额>")
+            return
+        }
+        val target = Bukkit.getPlayer(args[0])
+        if (target == null) {
+            sender.sendMessage("§c玩家不在线！")
+            return
+        }
+        val amount = args[1].toIntOrNull()
+        if (amount == null || amount <= 0) {
+            sender.sendMessage("§c金额必须是正整数！")
+            return
+        }
+        val current = plugin.playerDataManager.getCoins(sender)
+        if (current < amount) {
+            sender.sendMessage("§c你的硬币不足！当前: $current")
+            return
+        }
+        plugin.playerDataManager.removeCoins(sender, amount)
+        plugin.playerDataManager.addCoins(target, amount)
+        sender.sendMessage("§a成功转账 $amount 硬币给 ${target.name}")
+        target.sendMessage("§a你收到了来自 ${sender.name} 的 $amount 硬币")
+    }
+
+    private fun handleCoins(sender: CommandSender, args: Array<String>) {
+        if (args.isEmpty()) {
+            if (sender !is Player) {
+                sender.sendMessage("§c用法: /zr coins <set|add|take> <玩家> <金额>")
+                return
+            }
+            val coins = plugin.playerDataManager.getCoins(sender)
+            sender.sendMessage("§6你的硬币余额: $coins")
+            return
+        }
+
+        when (args[0].lowercase()) {
+            "set" -> {
+                if (!sender.hasPermission("zombie.run.admin")) {
+                    sender.sendMessage("§c你没有权限使用此命令！")
+                    return
+                }
+                if (args.size < 3) {
+                    sender.sendMessage("§c用法: /zr coins set <玩家> <金额>")
+                    return
+                }
+                val target = Bukkit.getPlayer(args[1])
+                if (target == null) {
+                    sender.sendMessage("§c玩家 ${args[1]} 不在线！")
+                    return
+                }
+                val amount = args[2].toIntOrNull()
+                if (amount == null || amount < 0) {
+                    sender.sendMessage("§c金额必须是非负整数！")
+                    return
+                }
+                plugin.playerDataManager.setCoins(target, amount)
+                sender.sendMessage("§a已将 ${target.name} 的硬币设置为 $amount")
+                target.sendMessage("§6你的硬币余额已被设置为: $amount")
+            }
+            "add" -> {
+                if (!sender.hasPermission("zombie.run.admin")) {
+                    sender.sendMessage("§c你没有权限使用此命令！")
+                    return
+                }
+                if (args.size < 3) {
+                    sender.sendMessage("§c用法: /zr coins add <玩家> <金额>")
+                    return
+                }
+                val target = Bukkit.getPlayer(args[1])
+                if (target == null) {
+                    sender.sendMessage("§c玩家 ${args[1]} 不在线！")
+                    return
+                }
+                val amount = args[2].toIntOrNull()
+                if (amount == null || amount <= 0) {
+                    sender.sendMessage("§c金额必须是正整数！")
+                    return
+                }
+                plugin.playerDataManager.addCoins(target, amount)
+                sender.sendMessage("§a已给 ${target.name} 添加 $amount 硬币")
+                target.sendMessage("§6+ $amount 硬币！当前余额: ${plugin.playerDataManager.getCoins(target)}")
+            }
+            "take" -> {
+                if (!sender.hasPermission("zombie.run.admin")) {
+                    sender.sendMessage("§c你没有权限使用此命令！")
+                    return
+                }
+                if (args.size < 3) {
+                    sender.sendMessage("§c用法: /zr coins take <玩家> <金额>")
+                    return
+                }
+                val target = Bukkit.getPlayer(args[1])
+                if (target == null) {
+                    sender.sendMessage("§c玩家 ${args[1]} 不在线！")
+                    return
+                }
+                val amount = args[2].toIntOrNull()
+                if (amount == null || amount <= 0) {
+                    sender.sendMessage("§c金额必须是正整数！")
+                    return
+                }
+                if (!plugin.playerDataManager.removeCoins(target, amount)) {
+                    sender.sendMessage("§c玩家硬币不足！当前: ${plugin.playerDataManager.getCoins(target)}")
+                    return
+                }
+                sender.sendMessage("§a已从 ${target.name} 扣除 $amount 硬币")
+                target.sendMessage("§6- $amount 硬币！当前余额: ${plugin.playerDataManager.getCoins(target)}")
+            }
+            else -> {
+                val target = Bukkit.getPlayer(args[0])
+                if (target == null) {
+                    sender.sendMessage("§c玩家 ${args[0]} 不在线！")
+                    return
+                }
+                val coins = plugin.playerDataManager.getCoins(target)
+                sender.sendMessage("§6${target.name} 的硬币余额: $coins")
+            }
+        }
+    }
+
+    private fun handleResetSelect(sender: CommandSender) {
+        if (sender !is Player) {
+            sender.sendMessage("§c此命令只能由玩家执行！")
+            return
+        }
+        plugin.playerDataManager.resetSelectedGun(sender)
+        sender.sendMessage("§a已重置你的枪械选择")
     }
 
     private fun handleStart(sender: CommandSender) {
@@ -92,23 +238,6 @@ class ZombieRunCommand(private val plugin: ZombieRun) : CommandExecutor, TabComp
         }
         plugin.gameManager.forceStartGame()
         sender.sendMessage("§a游戏开始！")
-    }
-
-    private fun handleDoor(sender: CommandSender, args: Array<out String>) {
-        if (args.isEmpty()) {
-            sender.sendMessage("§c用法: /zr door <门号>")
-            return
-        }
-        if (sender !is Player) {
-            sender.sendMessage("§c此命令只能由玩家执行！")
-            return
-        }
-        val doorNumber = args[0].toIntOrNull()
-        if (doorNumber == null) {
-            sender.sendMessage("§c门号必须是整数！")
-            return
-        }
-        plugin.doorManager.triggerDoor(doorNumber, sender)
     }
 
     private fun handleSpawn(sender: CommandSender, args: Array<out String>) {
@@ -130,21 +259,18 @@ class ZombieRunCommand(private val plugin: ZombieRun) : CommandExecutor, TabComp
             return
         }
         if (args.size < 2) {
-            sender.sendMessage("§c用法: /zr spawn add <名称> <类型> [门号] [房间号]")
+            sender.sendMessage("§c用法: /zr spawn add <名称> <类型>")
             return
         }
         val name = args[0]
         val typeStr = args[1].uppercase()
         val type = try {
-            Respawn.RespawnType.valueOf(typeStr)
+            cn.oneachina.zombieRun.model.Respawn.RespawnType.valueOf(typeStr)
         } catch (_: IllegalArgumentException) {
-            sender.sendMessage("§c无效的类型！可用: ${Respawn.RespawnType.entries.joinToString(", ")}")
+            sender.sendMessage("§c无效的类型！可用: ${cn.oneachina.zombieRun.model.Respawn.RespawnType.entries.joinToString(", ")}")
             return
         }
-        val doorNumber = if (args.size > 2) args[2].toIntOrNull() else null
-        val roomNumber = if (args.size > 3) args[3].toIntOrNull() else null
-
-        val respawn = Respawn(
+        val respawn = cn.oneachina.zombieRun.model.Respawn(
             name = name,
             x = sender.location.blockX,
             y = sender.location.blockY,
@@ -152,8 +278,8 @@ class ZombieRunCommand(private val plugin: ZombieRun) : CommandExecutor, TabComp
             yaw = sender.location.yaw.toDouble(),
             pitch = sender.location.pitch.toDouble(),
             type = type,
-            doorNumber = doorNumber,
-            roomNumber = roomNumber
+            doorNumber = null,
+            roomNumber = null
         )
         plugin.configManager.addRespawn(respawn)
         plugin.respawnManager.addRespawn(respawn)
@@ -198,7 +324,6 @@ class ZombieRunCommand(private val plugin: ZombieRun) : CommandExecutor, TabComp
         if (args.size < 7) {
             sender.sendMessage("§c用法: /zr doors add <x1> <y1> <z1> <x2> <y2> <z2> [mode] [门号] [delay] [材质]")
             sender.sendMessage("§cmode: normal, player, zombie, start (默认为 normal)")
-            sender.sendMessage("§c材质可填具体材质名（如 STONE）或 auto（自动扫描当前方块）")
             return
         }
         try {
@@ -208,20 +333,15 @@ class ZombieRunCommand(private val plugin: ZombieRun) : CommandExecutor, TabComp
             val x2 = args[3].toInt()
             val y2 = args[4].toInt()
             val z2 = args[5].toInt()
-
             val mode = args[6].lowercase()
             val validModes = setOf("normal", "player", "zombie", "start")
             if (mode !in validModes) {
                 sender.sendMessage("§c模式必须是 normal, player, zombie, start 之一")
                 return
             }
-
             val doorNumber = if (args.size > 7) args[7].toIntOrNull() ?: 0 else 0
             val delay = if (args.size > 8) args[8].toIntOrNull() ?: 30 else 30
-            val materialArg = if (args.size > 9) args[9] else "STONE"
-
-            val useScanData = materialArg.equals("auto", ignoreCase = true)
-            val material = if (useScanData) "" else materialArg
+            val material = if (args.size > 9) args[9] else "STONE"
 
             val minX = minOf(x1, x2)
             val minY = minOf(y1, y2)
@@ -229,20 +349,6 @@ class ZombieRunCommand(private val plugin: ZombieRun) : CommandExecutor, TabComp
             val maxX = maxOf(x1, x2)
             val maxY = maxOf(y1, y2)
             val maxZ = maxOf(z1, z2)
-
-            val blocks = mutableMapOf<String, String>()
-            if (useScanData) {
-                val world = if (sender is Player) sender.world else Bukkit.getWorlds().first()
-                for (x in minX..maxX) {
-                    for (y in minY..maxY) {
-                        for (z in minZ..maxZ) {
-                            val block = world.getBlockAt(x, y, z)
-                            blocks["$x,$y,$z"] = block.type.name
-                        }
-                    }
-                }
-                sender.sendMessage("§a已扫描门区域，共记录 ${blocks.size} 个方块。")
-            }
 
             val doorName = "door_${System.currentTimeMillis()}"
 
@@ -258,15 +364,12 @@ class ZombieRunCommand(private val plugin: ZombieRun) : CommandExecutor, TabComp
                 delay = delay,
                 material = material,
                 mode = Door.DoorMode.fromString(mode),
-                useScanData = useScanData,
-                blocks = blocks
+                useScanData = false,
+                blocks = emptyMap()
             )
             plugin.configManager.addDoorFull(door)
             plugin.doorManager.addDoor(door)
             sender.sendMessage("§a门 '$doorName' 添加成功！模式: $mode")
-            if (useScanData) {
-                sender.sendMessage("§a使用自动扫描模式，关门时将恢复原始方块。")
-            }
         } catch (_: NumberFormatException) {
             sender.sendMessage("§c坐标必须是整数！")
         }
@@ -293,82 +396,6 @@ class ZombieRunCommand(private val plugin: ZombieRun) : CommandExecutor, TabComp
         doors.forEach { sender.sendMessage("§a- ${it.name} (#${it.doorNumber}, ${it.mode})") }
     }
 
-    private fun handleReload(sender: CommandSender) {
-        plugin.configManager.reloadConfig()
-        plugin.doorManager.loadDoors()
-        plugin.respawnManager.loadRespawns()
-        plugin.buttonManager.loadButtons()
-        plugin.startEffectManager.loadEffects()
-        sender.sendMessage("§a配置重载成功！")
-    }
-
-    private fun handleOpen() {
-        if (plugin.gameManager.getGameStatus() != GameManager.GameStatus.RUNNING) {
-            plugin.gameManager.beginGame()
-        } else {
-            plugin.logger.warning("游戏已在运行中！")
-        }
-    }
-
-    private fun handleClose() {
-        plugin.gameManager.endGame(GameManager.Team.SPECTATOR)
-    }
-
-    private fun handleSelect(sender: CommandSender, args: Array<out String>) {
-        if (sender !is Player) {
-            sender.sendMessage("§c此命令只能由玩家执行！")
-            return
-        }
-        val weapons = plugin.miscManager.getSelectableWeapons()
-        if (weapons.isEmpty()) {
-            sender.sendMessage("§c当前没有可选枪械。")
-            return
-        }
-        if (args.isEmpty()) {
-            sender.sendMessage("§c用法: /zr select <编号 1-${weapons.size}>")
-            sender.sendMessage("§7可选枪械:")
-            weapons.forEachIndexed { index, weapon ->
-                sender.sendMessage("§7${index + 1}. $weapon")
-            }
-            return
-        }
-        val num = args[0].toIntOrNull()
-        if (num == null || num !in 1..weapons.size) {
-            sender.sendMessage("§c编号必须是 1-${weapons.size} 的整数！")
-            return
-        }
-        if (!plugin.miscManager.setSelectedWeapon(sender, num)) {
-            sender.sendMessage("§c选择失败，请重试。")
-            return
-        }
-        sender.sendMessage("§a已选择枪械 ${weapons[num - 1]}，下次随机时将自动购买。")
-    }
-
-    private fun handleUnselect(sender: CommandSender) {
-        if (sender !is Player) {
-            sender.sendMessage("§c此命令只能由玩家执行！")
-            return
-        }
-        plugin.miscManager.clearSelectedWeapon(sender)
-        sender.sendMessage("§a已取消选择，将随机获得枪械。")
-    }
-
-    private fun handleRandomgun(sender: CommandSender) {
-        if (sender !is Player) {
-            sender.sendMessage("§c此命令只能由玩家执行！")
-            return
-        }
-        plugin.miscManager.giveRandomGun(sender)
-    }
-
-    private fun handleLobby(sender: CommandSender) {
-        if (sender !is Player) {
-            sender.sendMessage("§c此命令只能由玩家执行！")
-            return
-        }
-        plugin.miscManager.teleportToLobby(sender)
-    }
-
     private fun handleButtons(sender: CommandSender, args: Array<out String>) {
         if (args.isEmpty()) {
             sender.sendMessage("§c用法: /zr buttons <add|remove|list>")
@@ -389,9 +416,6 @@ class ZombieRunCommand(private val plugin: ZombieRun) : CommandExecutor, TabComp
         }
         if (args.size < 4) {
             sender.sendMessage("§c用法: /zr buttons add <x> <y> <z> <mode> [参数...]")
-            sender.sendMessage("§c模式 normal: /zr buttons add <x> <y> <z> normal <门号>")
-            sender.sendMessage("§c模式 tp: /zr buttons add <x> <y> <z> tp <playerX> <playerY> <playerZ> <zombieX> <zombieY> <zombieZ> <门号> [操控门号1] [操控门号2] [操控门号3] [操控门号4] [操控门号5] (操控门号可选)")
-            sender.sendMessage("§c模式 escape: /zr buttons add <x> <y> <z> escape")
             return
         }
         try {
@@ -400,7 +424,7 @@ class ZombieRunCommand(private val plugin: ZombieRun) : CommandExecutor, TabComp
             val z = args[2].toInt()
             val mode = args[3].lowercase()
 
-            val button: Button = when (mode) {
+            val button = when (mode) {
                 "normal" -> {
                     if (args.size < 5) {
                         sender.sendMessage("§cnormal模式需要指定门号！")
@@ -414,59 +438,17 @@ class ZombieRunCommand(private val plugin: ZombieRun) : CommandExecutor, TabComp
                     val name = "button_${x}_${y}_${z}_normal"
                     Button(name, x, y, z, mode, doorNumber = doorNumber)
                 }
-                "tp" -> {
-                    if (args.size < 11) {
-                        sender.sendMessage("§ctp模式需要指定人类目标坐标、僵尸目标坐标和区域门号！")
-                        return
-                    }
-                    val playerX = args[4].toIntOrNull()
-                    val playerY = args[5].toIntOrNull()
-                    val playerZ = args[6].toIntOrNull()
-                    val zombieX = args[7].toIntOrNull()
-                    val zombieY = args[8].toIntOrNull()
-                    val zombieZ = args[9].toIntOrNull()
-                    val areaDoorNumber = args[10].toIntOrNull()
-                    if (playerX == null || playerY == null || playerZ == null ||
-                        zombieX == null || zombieY == null || zombieZ == null ||
-                        areaDoorNumber == null) {
-                        sender.sendMessage("§c所有目标坐标和门号必须是整数！")
-                        return
-                    }
-                    
-                    val doorNumbers = mutableListOf<Int>()
-                    for (i in 11 until minOf(args.size, 16)) {
-                        val doorNumber = args[i].toIntOrNull()
-                        if (doorNumber != null) {
-                            doorNumbers.add(doorNumber)
-                        }
-                    }
-                    
-                    val name = "button_${x}_${y}_${z}_tp"
-                    Button(
-                        name, x, y, z, mode,
-                        areaDoorNumber = areaDoorNumber,
-                        doorNumbers = if (doorNumbers.isNotEmpty()) doorNumbers else null,
-                        playerTargetX = playerX,
-                        playerTargetY = playerY,
-                        playerTargetZ = playerZ,
-                        zombieTargetX = zombieX,
-                        zombieTargetY = zombieY,
-                        zombieTargetZ = zombieZ
-                    )
-                }
                 "escape" -> {
                     val name = "button_${x}_${y}_${z}_escape"
                     Button(name, x, y, z, mode)
                 }
                 else -> {
-                    sender.sendMessage("§c无效的模式！可用: normal, tp, escape")
+                    sender.sendMessage("§c无效的模式！可用: normal, escape")
                     return
                 }
             }
-
             plugin.buttonManager.addButton(button)
             plugin.configManager.addButton(button)
-
             sender.sendMessage("§a按钮添加成功！名称: ${button.name}, 模式: ${button.mode}")
         } catch (_: NumberFormatException) {
             sender.sendMessage("§c坐标和数字参数必须是整数！")
@@ -494,7 +476,6 @@ class ZombieRunCommand(private val plugin: ZombieRun) : CommandExecutor, TabComp
         buttons.forEach {
             val info = when {
                 it.isNormal() -> "门号: ${it.doorNumber}"
-                it.isTp() -> "人类目标: (${it.playerTargetX},${it.playerTargetY},${it.playerTargetZ}) 僵尸目标: (${it.zombieTargetX},${it.zombieTargetY},${it.zombieTargetZ}) 区域门: ${it.areaDoorNumber} ${if (it.doorNumbers != null) "控制门: ${it.doorNumbers.joinToString(", ")}" else ""}"
                 it.isEscape() -> "撤离按钮"
                 else -> ""
             }
@@ -502,34 +483,37 @@ class ZombieRunCommand(private val plugin: ZombieRun) : CommandExecutor, TabComp
         }
     }
 
-    private fun handleTransfer(sender: Player, args: Array<out String>) {
-        if (args.isEmpty()) {
-            sender.sendMessage("§c用法: /zr transfer <玩家> <金额>")
-            return
+    private fun handleReload(sender: CommandSender) {
+        plugin.configManager.reloadConfig()
+        plugin.doorManager.loadDoors()
+        plugin.respawnManager.loadRespawns()
+        plugin.buttonManager.loadButtons()
+        plugin.startEffectManager.loadEffects()
+        plugin.gunManager.loadConfig()
+        plugin.gunShopGUI.reloadSettings()
+        val resetAfter = plugin.configManager.getConfig()
+            .getConfigurationSection("player-data")
+            ?.getBoolean("reset-selection-after-game", false) ?: false
+        plugin.gameManager.setResetSelectionsAfterGame(resetAfter)
+        sender.sendMessage("§a配置重载成功！")
+    }
+
+    private fun handleOpen() {
+        if (plugin.gameManager.getGameStatus() != GameManager.GameStatus.RUNNING) {
+            plugin.gameManager.beginGame()
+        } else {
+            plugin.logger.warning("游戏已在运行中！")
         }
-        if (args.size < 2) {
-            sender.sendMessage("§c用法: /zr transfer <玩家> <金额>")
-            return
-        }
-        val target = Bukkit.getPlayer(args[0])
-        if (target == null) {
-            sender.sendMessage("§c玩家不在线！")
-            return
-        }
-        val amount = args[1].toIntOrNull()
-        if (amount == null || amount <= 0) {
-            sender.sendMessage("§c金额必须是正整数！")
-            return
-        }
-        val current = plugin.miscManager.getCoins(sender)
-        if (current < amount) {
-            sender.sendMessage("§c你的硬币不足！")
-            return
-        }
-        plugin.miscManager.takeCoins(sender, amount)
-        plugin.miscManager.addCoins(target, amount)
-        sender.sendMessage("§a成功转账 $amount 硬币给 ${target.name}")
-        target.sendMessage("§a你收到了来自 ${sender.name} 的 $amount 硬币")
+    }
+
+    private fun handleClose() {
+        plugin.gameManager.endGame(GameManager.Team.SPECTATOR)
+    }
+
+    private fun handleResetAll(sender: CommandSender) {
+        val count = plugin.gameManager.forceClearAllData()
+        sender.sendMessage("§a已清空游戏数据！清除了 $count 名玩家的身份信息。")
+        sender.sendMessage("§a玩家硬币余额已保留。")
     }
 
     override fun onTabComplete(
@@ -538,191 +522,160 @@ class ZombieRunCommand(private val plugin: ZombieRun) : CommandExecutor, TabComp
         alias: String,
         args: Array<out String>
     ): MutableList<String>? {
-        if (!sender.hasPermission("zombie.run.admin")) return mutableListOf()
-
         return when (args.size) {
             1 -> {
-                listOf("start", "door", "spawn", "doors", "buttons", "reload", "open", "close", "select", "unselect", "randomgun", "lobby")
-                    .filter { it.startsWith(args[0].lowercase()) }
-                    .toMutableList()
+                if (sender.hasPermission("zombie.run.admin")) {
+                    listOf("start", "spawn", "doors", "buttons", "reload", "open", "close", "reset-all",
+                        "shop", "lobby", "transfer", "coins", "reset-select")
+                } else {
+                    listOf("shop", "lobby", "transfer", "coins", "reset-select")
+                }.filter { it.startsWith(args[0].lowercase()) }.toMutableList()
             }
             2 -> {
                 when (args[0].lowercase()) {
-                    "door" -> {
-                        (1..9).map { it.toString() }.filter { it.startsWith(args[1]) }.toMutableList()
+                    "spawn" -> listOf("add", "remove", "list").filter { it.startsWith(args[1].lowercase()) }.toMutableList()
+                    "doors" -> listOf("add", "remove", "list").filter { it.startsWith(args[1].lowercase()) }.toMutableList()
+                    "buttons" -> listOf("add", "remove", "list").filter { it.startsWith(args[1].lowercase()) }.toMutableList()
+                    "transfer" -> Bukkit.getOnlinePlayers().map { it.name }.filter { it.startsWith(args[1], ignoreCase = true) }.toMutableList()
+                    "coins" -> {
+                        if (sender.hasPermission("zombie.run.admin")) {
+                            listOf("set", "add", "take").filter { it.startsWith(args[1].lowercase()) }.toMutableList()
+                        } else {
+                            Bukkit.getOnlinePlayers().map { it.name }.filter { it.startsWith(args[1], ignoreCase = true) }.toMutableList()
+                        }
                     }
+                    else -> mutableListOf()
+                }
+            }
+            3 -> {
+                when (args[0].lowercase()) {
                     "spawn" -> {
-                        listOf("add", "remove", "list").filter { it.startsWith(args[1].lowercase()) }.toMutableList()
+                        if (args[1].lowercase() == "add") {
+                            cn.oneachina.zombieRun.model.Respawn.RespawnType.entries.map { it.name.lowercase() }
+                                .filter { it.startsWith(args[2].lowercase()) }.toMutableList()
+                        } else {
+                            mutableListOf()
+                        }
                     }
                     "doors" -> {
-                        listOf("add", "remove", "list").filter { it.startsWith(args[1].lowercase()) }.toMutableList()
+                        if (args[1].lowercase() == "add") {
+                            mutableListOf("~")
+                        } else {
+                            mutableListOf()
+                        }
                     }
                     "buttons" -> {
-                        listOf("add", "remove", "list").filter { it.startsWith(args[1].lowercase()) }.toMutableList()
+                        if (args[1].lowercase() == "add") {
+                            mutableListOf("~")
+                        } else {
+                            mutableListOf()
+                        }
                     }
-                    "select" -> {
-                        val count = plugin.miscManager.getSelectableWeapons().size
-                        (1..count).map { it.toString() }.filter { it.startsWith(args[1]) }.toMutableList()
+                    "coins" -> {
+                        when (args[1].lowercase()) {
+                            "set", "add", "take" -> Bukkit.getOnlinePlayers().map { it.name }
+                                .filter { it.startsWith(args[2], ignoreCase = true) }.toMutableList()
+                            else -> mutableListOf()
+                        }
                     }
                     else -> mutableListOf()
                 }
             }
-            else -> {
+            4 -> {
                 when (args[0].lowercase()) {
-                    "spawn" -> handleSpawnTabComplete(args)
-                    "doors" -> handleDoorsTabComplete(args)
-                    "buttons" -> handleButtonsTabComplete(args)
-                    else -> mutableListOf()
-                }
-            }
-        }
-    }
-
-    private fun handleSpawnTabComplete(args: Array<out String>): MutableList<String> {
-        if (args.size < 2) return mutableListOf()
-        return when (args[1].lowercase()) {
-            "add" -> {
-                when (args.size) {
-                    3 -> mutableListOf()
-                    4 -> {
-                        Respawn.RespawnType.entries.map { it.name.lowercase() }
-                            .filter { it.startsWith(args[3].lowercase()) }
-                            .toMutableList()
+                    "doors" -> {
+                        if (args[1].lowercase() == "add") {
+                            mutableListOf("~")
+                        } else {
+                            mutableListOf()
+                        }
                     }
-                    5 -> mutableListOf("~")
-                    6 -> mutableListOf("~")
+                    "buttons" -> {
+                        if (args[1].lowercase() == "add") {
+                            mutableListOf("~")
+                        } else {
+                            mutableListOf()
+                        }
+                    }
                     else -> mutableListOf()
                 }
             }
-            "remove" -> {
-                if (args.size == 3) {
-                    plugin.respawnManager.getAllRespawns().map { it.name }
-                        .filter { it.startsWith(args[2], ignoreCase = true) }
-                        .toMutableList()
-                } else mutableListOf()
+            5 -> {
+                when (args[0].lowercase()) {
+                    "buttons" -> {
+                        if (args[1].lowercase() == "add") {
+                            mutableListOf("~")
+                        } else {
+                            mutableListOf()
+                        }
+                    }
+                    "doors" -> {
+                        if (args[1].lowercase() == "add") {
+                            mutableListOf("~")
+                        } else {
+                            mutableListOf()
+                        }
+                    }
+                    else -> mutableListOf()
+                }
             }
-            "list" -> mutableListOf()
+            6 -> {
+                when (args[0].lowercase()) {
+                    "buttons" -> {
+                        if (args[1].lowercase() == "add") {
+                            listOf("normal", "escape").filter { it.startsWith(args[5].lowercase()) }.toMutableList()
+                        } else {
+                            mutableListOf()
+                        }
+                    }
+                    "doors" -> {
+                        if (args[1].lowercase() == "add") {
+                            mutableListOf("~")
+                        } else {
+                            mutableListOf()
+                        }
+                    }
+                    else -> mutableListOf()
+                }
+            }
+            7 -> {
+                when (args[0].lowercase()) {
+                    "doors" -> {
+                        if (args[1].lowercase() == "add") {
+                            mutableListOf("~")
+                        } else {
+                            mutableListOf()
+                        }
+                    }
+                    else -> mutableListOf()
+                }
+            }
+            8 -> {
+                when (args[0].lowercase()) {
+                    "doors" -> {
+                        if (args[1].lowercase() == "add") {
+                            mutableListOf("~")
+                        } else {
+                            mutableListOf()
+                        }
+                    }
+                    else -> mutableListOf()
+                }
+            }
+            9 -> {
+                when (args[0].lowercase()) {
+                    "doors" -> {
+                        if (args[1].lowercase() == "add") {
+                            listOf("normal", "player", "zombie", "start")
+                                .filter { it.startsWith(args[8].lowercase()) }.toMutableList()
+                        } else {
+                            mutableListOf()
+                        }
+                    }
+                    else -> mutableListOf()
+                }
+            }
             else -> mutableListOf()
         }
-    }
-
-    private fun handleDoorsTabComplete(args: Array<out String>): MutableList<String> {
-        if (args.size < 2) return mutableListOf()
-        return when (args[1].lowercase()) {
-            "add" -> {
-                when (args.size) {
-                    in 3..8 -> mutableListOf("~")
-                    9 -> {
-                        listOf("normal", "player", "zombie", "start")
-                            .filter { it.startsWith(args[7].lowercase()) }
-                            .toMutableList()
-                    }
-                    10 -> {
-                        (0..9).map { it.toString() }
-                            .filter { it.startsWith(args[8]) }
-                            .toMutableList()
-                    }
-                    11 -> {
-                        listOf("30", "60", "90", "120")
-                            .filter { it.startsWith(args[9]) }
-                            .toMutableList()
-                    }
-                    12 -> {
-                        listOf("STONE", "IRON_BLOCK", "OBSERVER", "auto")
-                            .filter { it.startsWith(args[10].uppercase()) }
-                            .toMutableList()
-                    }
-                    else -> mutableListOf()
-                }
-            }
-            "remove" -> {
-                if (args.size == 3) {
-                    plugin.doorManager.getAllDoors().map { it.name }
-                        .filter { it.startsWith(args[2], ignoreCase = true) }
-                        .toMutableList()
-                } else mutableListOf()
-            }
-            "list" -> mutableListOf()
-            else -> mutableListOf()
-        }
-    }
-
-    private fun handleButtonsTabComplete(args: Array<out String>): MutableList<String> {
-        if (args.size < 2) return mutableListOf()
-        return when (args[1].lowercase()) {
-            "add" -> {
-                when (args.size) {
-                    3, 4 -> mutableListOf("~")
-                    5 -> {
-                        listOf("normal", "tp", "escape")
-                            .filter { it.startsWith(args[4].lowercase()) }
-                            .toMutableList()
-                    }
-
-                    6 -> {
-                        val mode = args[4].lowercase()
-                        when (mode) {
-                            "normal" -> listOf("<门号>").filter { it.startsWith(args[5]) }
-                            "tp" -> mutableListOf("~")
-                            "escape" -> mutableListOf()
-                            else -> mutableListOf()
-                        }
-                    }
-
-                    7 -> {
-                        val mode = args[4].lowercase()
-                        when (mode) {
-                            "tp" -> mutableListOf("~")
-                            else -> mutableListOf()
-                        }
-                    }
-
-                    8 -> {
-                        val mode = args[4].lowercase()
-                        when (mode) {
-                            "tp" -> mutableListOf("~")
-                            else -> mutableListOf()
-                        }
-                    }
-
-                    9 -> {
-                        val mode = args[4].lowercase()
-                        when (mode) {
-                            "tp" -> mutableListOf("~")
-                            else -> mutableListOf()
-                        }
-                    }
-
-                    10 -> {
-                        val mode = args[4].lowercase()
-                        when (mode) {
-                            "tp" -> mutableListOf("~")
-                            else -> mutableListOf()
-                        }
-                    }
-
-                    11 -> {
-                        val mode = args[4].lowercase()
-                        when (mode) {
-                            "tp" -> mutableListOf("~")
-                            else -> mutableListOf()
-                        }
-                    }
-
-                    else -> mutableListOf()
-                }
-            }
-
-            "remove" -> {
-                if (args.size == 3) {
-                    plugin.buttonManager.getAllButtons().map { it.name }
-                        .filter { it.startsWith(args[2], ignoreCase = true) }
-                        .toMutableList()
-                } else mutableListOf()
-            }
-
-            "list" -> mutableListOf()
-             else -> mutableListOf()
-        } as MutableList<String>
     }
 }
